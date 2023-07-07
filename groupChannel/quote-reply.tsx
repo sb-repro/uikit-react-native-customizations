@@ -24,6 +24,7 @@ const QuoteReplyContext = React.createContext<QuoteReplyValue>({
   },
 });
 
+// TO-BE: GroupChannelContexts.Fragment -> messageToReply/setMesageToReply (equal level with `messageToEdit`)
 const QuoteReplyProvider = ({ children }: { children: (params: QuoteReplyValue) => JSX.Element }) => {
   const [parentMessage, setParentMessage] = useState<SendbirdMessage | undefined>(undefined);
   const value = { parentMessage, setParentMessage };
