@@ -17,17 +17,10 @@ const UserSearchContext = React.createContext({
 
 const GroupChannelInviteModule = createUserListModule<SendbirdUser>();
 const GroupChannelCreateFragment = createGroupChannelCreateFragment<SendbirdUser>({
-  Header: (props) => {
-    return (
-      <View>
-        <GroupChannelInviteModule.Header {...props} />
-      </View>
-    );
-  },
   List: (props) => {
     const { keyword, setKeyword } = useContext(UserSearchContext);
     return (
-      <View>
+      <View style={{ flex: 1 }}>
         <View style={styles.inputContainer}>
           <TextInput
             placeholder={'Enter the nickname'}
