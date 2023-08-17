@@ -13,18 +13,21 @@ const UserSearchContext = React.createContext({
   setKeyword: (_: string) => {
     /* noop */
   },
-  onPressSearch: () => {
-    /* noop */
-  },
 });
 
 const GroupChannelInviteModule = createUserListModule<SendbirdUser>();
 const GroupChannelCreateFragment = createGroupChannelCreateFragment<SendbirdUser>({
   Header: (props) => {
-    const { keyword, setKeyword, onPressSearch } = useContext(UserSearchContext);
     return (
       <View>
         <GroupChannelInviteModule.Header {...props} />
+      </View>
+    );
+  },
+  List: (props) => {
+    const { keyword, setKeyword } = useContext(UserSearchContext);
+    return (
+      <View>
         <View style={styles.inputContainer}>
           <TextInput
             placeholder={'Enter the nickname'}
@@ -32,10 +35,11 @@ const GroupChannelCreateFragment = createGroupChannelCreateFragment<SendbirdUser
             onChangeText={setKeyword}
             style={styles.input}
           />
-          <TouchableOpacity onPress={onPressSearch}>
+          <TouchableOpacity onPress={props.onRefresh}>
             <Icon icon={'search'} color={'black'} />
           </TouchableOpacity>
         </View>
+        <GroupChannelInviteModule.List {...props} refreshing={false} />
       </View>
     );
   },
@@ -46,13 +50,11 @@ const GroupChannelCreateScreen = () => {
   const { sdk } = useSendbirdChat();
 
   const [keyword, setKeyword] = React.useState('');
-  const [searchIndex, setSearchIndex] = React.useState(0);
   const queryCreator = () => sdk.createApplicationUserListQuery({ nicknameStartsWithFilter: keyword });
 
   return (
-    <UserSearchContext.Provider value={{ keyword, setKeyword, onPressSearch: () => setSearchIndex((p) => p + 1) }}>
+    <UserSearchContext.Provider value={{ keyword, setKeyword }}>
       <GroupChannelCreateFragment
-        key={searchIndex}
         channelType={params.channelType}
         queryCreator={queryCreator}
         onBeforeCreateChannel={(channelParams) => {
