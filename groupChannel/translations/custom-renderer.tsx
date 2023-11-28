@@ -1,7 +1,5 @@
-// copy and paste GroupChannelMessageRenderer.tsx
+// Copy and paste GroupChannelMessageRenderer.tsx and implement your own view
 // https://github.com/sendbird/sendbird-uikit-react-native/blob/main/packages/uikit-react-native/src/components/GroupChannelMessageRenderer/index.tsx
-//
-// Implement your own view
 
 import React, { useRef } from 'react';
 import { View } from 'react-native';
