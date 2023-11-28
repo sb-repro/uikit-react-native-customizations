@@ -1,0 +1,360 @@
+// copy and paste GroupChannelMessageRenderer.tsx
+// https://github.com/sendbird/sendbird-uikit-react-native/blob/main/packages/uikit-react-native/src/components/GroupChannelMessageRenderer/index.tsx
+//
+// Implement your own view
+
+import React, { useRef } from 'react';
+import { View } from 'react-native';
+
+import {
+  GroupChannelProps,
+  ReactionAddons,
+  SBUUtils,
+  useLocalization,
+  usePlatformService,
+  useSendbirdChat,
+} from '@sendbird/uikit-react-native';
+import {
+  Box,
+  GroupChannelMessage,
+  GroupChannelMessageProps,
+  RegexTextPattern,
+  Text,
+  useBottomSheet,
+  useUIKitTheme,
+} from '@sendbird/uikit-react-native-foundation';
+import GroupChannelMessageDateSeparator from '@sendbird/uikit-react-native/src/components/GroupChannelMessageRenderer/GroupChannelMessageDateSeparator';
+import GroupChannelMessageFocusAnimation from '@sendbird/uikit-react-native/src/components/GroupChannelMessageRenderer/GroupChannelMessageFocusAnimation';
+import GroupChannelMessageOutgoingStatus from '@sendbird/uikit-react-native/src/components/GroupChannelMessageRenderer/GroupChannelMessageOutgoingStatus';
+import GroupChannelMessageParentMessage from '@sendbird/uikit-react-native/src/components/GroupChannelMessageRenderer/GroupChannelMessageParentMessage';
+import { VOICE_MESSAGE_META_ARRAY_DURATION_KEY } from '@sendbird/uikit-react-native/src/constants';
+import {
+  SendbirdAdminMessage,
+  SendbirdFileMessage,
+  SendbirdMessage,
+  SendbirdUserMessage,
+  calcMessageGrouping,
+  getMessageType,
+  isMyMessage,
+  isVoiceMessage,
+  shouldRenderParentMessage,
+  shouldRenderReaction,
+  useIIFE,
+} from '@sendbird/uikit-utils';
+
+type Props = Parameters<NonNullable<GroupChannelProps['Fragment']['renderMessage']>>[0];
+export const MyCustomMessageRenderer = ({
+  channel,
+  message,
+  onPress,
+  onLongPress,
+  onPressParentMessage,
+  onShowUserProfile,
+  enableMessageGrouping,
+  focused,
+  prevMessage,
+  nextMessage,
+  bottomSheetItem,
+}: Props): React.ReactElement => {
+  const { openSheet } = useBottomSheet();
+
+  const playerUnsubscribes = useRef<(() => void)[]>([]);
+  const { palette } = useUIKitTheme();
+  const { sbOptions, currentUser, mentionManager } = useSendbirdChat();
+  const { STRINGS } = useLocalization();
+  const { mediaService, playerService } = usePlatformService();
+  const { groupWithPrev, groupWithNext } = calcMessageGrouping(
+    Boolean(enableMessageGrouping),
+    message,
+    prevMessage,
+    nextMessage,
+  );
+
+  const reactionChildren = useIIFE(() => {
+    if (
+      shouldRenderReaction(channel, sbOptions.uikitWithAppInfo.groupChannel.channel.enableReactions) &&
+      message.reactions &&
+      message.reactions.length > 0
+    ) {
+      return <ReactionAddons.Message channel={channel} message={message} />;
+    }
+    return null;
+  });
+
+  const resetPlayer = async () => {
+    playerUnsubscribes.current.forEach((unsubscribe) => {
+      try {
+        unsubscribe();
+      } catch {}
+    });
+    playerUnsubscribes.current.length = 0;
+    await playerService.reset();
+  };
+
+  /** Open action sheet with translation menu **/
+  const onLongPressWithTranslation = () => {
+    if (bottomSheetItem && message.isUserMessage()) {
+      openSheet({
+        ...bottomSheetItem,
+        sheetItems: [
+          ...bottomSheetItem.sheetItems,
+          {
+            icon: 'edit',
+            title: 'Translate',
+            onPress() {
+              channel.translateUserMessage(message, ['ko', 'en']);
+            },
+          },
+        ],
+      });
+    }
+  };
+
+  const variant = isMyMessage(message, currentUser?.userId) ? 'outgoing' : 'incoming';
+
+  const messageProps: Omit<GroupChannelMessageProps<SendbirdMessage>, 'message'> = {
+    channel,
+    variant,
+    onPress,
+    onLongPress,
+    onPressURL: (url) => SBUUtils.openURL(url),
+    onPressAvatar: () => {
+      if ('sender' in message) onShowUserProfile?.(message.sender);
+    },
+    onPressMentionedUser: (mentionedUser) => {
+      if (mentionedUser) onShowUserProfile?.(mentionedUser);
+    },
+    onToggleVoiceMessage: async (state, setState) => {
+      if (isVoiceMessage(message) && message.sendingStatus === 'succeeded') {
+        if (playerService.uri === message.url) {
+          if (playerService.state === 'playing') {
+            await playerService.pause();
+          } else {
+            await playerService.play(message.url);
+          }
+        } else {
+          if (playerService.state !== 'idle') {
+            await resetPlayer();
+          }
+
+          const shouldSeekToTime = state.duration > state.currentTime && state.currentTime > 0;
+          let seekFinished = !shouldSeekToTime;
+
+          const forPlayback = playerService.addPlaybackListener(({ stopped, currentTime, duration }) => {
+            if (seekFinished) {
+              setState((prevState) => ({ ...prevState, currentTime: stopped ? 0 : currentTime, duration }));
+            }
+          });
+          const forState = playerService.addStateListener((state) => {
+            switch (state) {
+              case 'preparing':
+                setState((prevState) => ({ ...prevState, status: 'preparing' }));
+                break;
+              case 'playing':
+                setState((prevState) => ({ ...prevState, status: 'playing' }));
+                break;
+              case 'idle':
+              case 'paused': {
+                setState((prevState) => ({ ...prevState, status: 'paused' }));
+                break;
+              }
+              case 'stopped':
+                setState((prevState) => ({ ...prevState, status: 'paused' }));
+                break;
+            }
+          });
+          playerUnsubscribes.current.push(forPlayback, forState);
+
+          await playerService.play(message.url);
+          if (shouldSeekToTime) {
+            await playerService.seek(state.currentTime);
+            seekFinished = true;
+          }
+        }
+      }
+    },
+    groupedWithPrev: groupWithPrev,
+    groupedWithNext: groupWithNext,
+    children: reactionChildren,
+    sendingStatus: isMyMessage(message, currentUser?.userId) ? (
+      <GroupChannelMessageOutgoingStatus channel={channel} message={message} />
+    ) : null,
+    parentMessage: shouldRenderParentMessage(message) ? (
+      <GroupChannelMessageParentMessage
+        channel={channel}
+        message={message.parentMessage}
+        variant={variant}
+        childMessage={message}
+        onPress={onPressParentMessage}
+      />
+    ) : null,
+    strings: {
+      edited: STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_EDITED_POSTFIX,
+      senderName: ('sender' in message && message.sender.nickname) || STRINGS.LABELS.USER_NO_NAME,
+      sentDate: STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_TIME(message),
+      fileName: message.isFileMessage() ? STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_FILE_TITLE(message) : '',
+      unknownTitle: STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_UNKNOWN_TITLE(message),
+      unknownDescription: STRINGS.GROUP_CHANNEL.MESSAGE_BUBBLE_UNKNOWN_DESC(message),
+    },
+  };
+
+  const userMessageProps: {
+    renderRegexTextChildren: (message: SendbirdUserMessage) => string;
+    regexTextPatterns: RegexTextPattern[];
+  } = {
+    renderRegexTextChildren: (message) => {
+      if (
+        mentionManager.shouldUseMentionedMessageTemplate(message, sbOptions.uikit.groupChannel.channel.enableMention)
+      ) {
+        return message.mentionedMessageTemplate;
+      } else {
+        return message.message;
+      }
+    },
+    regexTextPatterns: [
+      {
+        regex: mentionManager.templateRegex,
+        replacer({ match, groups, parentProps, index, keyPrefix }) {
+          const user = message.mentionedUsers?.find((it) => it.userId === groups[2]);
+          if (user) {
+            const mentionColor =
+              !isMyMessage(message, currentUser?.userId) && user.userId === currentUser?.userId
+                ? palette.onBackgroundLight01
+                : parentProps?.color;
+
+            return (
+              <Text
+                {...parentProps}
+                key={`${keyPrefix}-${index}`}
+                color={mentionColor}
+                onPress={() => messageProps.onPressMentionedUser?.(user)}
+                onLongPress={messageProps.onLongPress}
+                style={[
+                  parentProps?.style,
+                  { fontWeight: '700' },
+                  user.userId === currentUser?.userId && { backgroundColor: palette.highlight },
+                ]}
+              >
+                {`${mentionManager.asMentionedMessageText(user)}`}
+              </Text>
+            );
+          }
+          return match;
+        },
+      },
+    ],
+  };
+
+  const renderMessage = () => {
+    switch (getMessageType(message)) {
+      case 'admin': {
+        return <GroupChannelMessage.Admin message={message as SendbirdAdminMessage} {...messageProps} />;
+      }
+      case 'user':
+      case 'user.opengraph': {
+        if (!message.isUserMessage()) return null;
+        if (message.ogMetaData && sbOptions.uikitWithAppInfo.groupChannel.channel.enableOgtag) {
+          return (
+            <GroupChannelMessage.OpenGraphUser
+              message={message as SendbirdUserMessage}
+              {...userMessageProps}
+              {...messageProps}
+            />
+          );
+        } else {
+          {/** Implement your own message view here **/}
+          const translated = Object.keys(message.translations).length > 0;
+          if (translated) {
+            return (
+              <GroupChannelMessage.User
+                message={message as SendbirdUserMessage}
+                {...userMessageProps}
+                {...messageProps}
+              >
+                {/** children for translations **/}
+                <View style={{ backgroundColor: 'rgba(0,0,0,0.5)', padding: 6 }}>
+                  {Object.entries(message.translations).map(([key, value]) => {
+                    return (
+                      <Text key={key} style={{ color: 'white' }}>
+                        {key}: {value}
+                      </Text>
+                    );
+                  })}
+                </View>
+
+                {/** children for reactions **/}
+                {messageProps.children}
+              </GroupChannelMessage.User>
+            );
+          }
+
+          return (
+            <GroupChannelMessage.User
+              message={message as SendbirdUserMessage}
+              {...userMessageProps}
+              {...messageProps}
+              onLongPress={onLongPressWithTranslation}
+            />
+          );
+        }
+      }
+      case 'file':
+      case 'file.audio': {
+        return <GroupChannelMessage.File message={message as SendbirdFileMessage} {...messageProps} />;
+      }
+      case 'file.image': {
+        return <GroupChannelMessage.ImageFile message={message as SendbirdFileMessage} {...messageProps} />;
+      }
+      case 'file.video': {
+        return (
+          <GroupChannelMessage.VideoFile
+            message={message as SendbirdFileMessage}
+            fetchThumbnailFromVideoSource={(uri) => mediaService.getVideoThumbnail({ url: uri, timeMills: 1000 })}
+            {...messageProps}
+          />
+        );
+      }
+      case 'file.voice': {
+        return (
+          <GroupChannelMessage.VoiceFile
+            message={message as SendbirdFileMessage}
+            durationMetaArrayKey={VOICE_MESSAGE_META_ARRAY_DURATION_KEY}
+            onUnmount={() => {
+              if (isVoiceMessage(message) && playerService.uri === message.url) {
+                resetPlayer();
+              }
+            }}
+            {...messageProps}
+          />
+        );
+      }
+      case 'unknown':
+      default: {
+        return <GroupChannelMessage.Unknown message={message} {...messageProps} />;
+      }
+    }
+  };
+
+  const messageGap = useIIFE(() => {
+    if (message.isAdminMessage()) {
+      if (nextMessage?.isAdminMessage()) {
+        return 8;
+      } else {
+        return 16;
+      }
+    } else if (nextMessage && shouldRenderParentMessage(nextMessage)) {
+      return 16;
+    } else if (groupWithNext) {
+      return 2;
+    } else {
+      return 16;
+    }
+  });
+
+  return (
+    <Box paddingHorizontal={16} marginBottom={messageGap}>
+      <GroupChannelMessageDateSeparator message={message} prevMessage={prevMessage} />
+      <GroupChannelMessageFocusAnimation focused={focused}>{renderMessage()}</GroupChannelMessageFocusAnimation>
+    </Box>
+  );
+};
