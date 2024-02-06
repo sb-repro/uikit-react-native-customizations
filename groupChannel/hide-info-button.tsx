@@ -6,6 +6,7 @@ import { createGroupChannelFragment, createGroupChannelModule, useSendbirdChat }
 import { useAppNavigation } from '../../../hooks/useAppNavigation';
 import { Routes } from '../../../libs/navigation';
 
+// HERE
 const { Header } = createGroupChannelModule();
 const GroupChannelFragment = createGroupChannelFragment({
   Header: (props) => {
