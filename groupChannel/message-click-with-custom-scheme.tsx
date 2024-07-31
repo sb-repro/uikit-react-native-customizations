@@ -1,9 +1,11 @@
 import React from 'react';
 import { View } from 'react-native';
 
+import { UserMessage } from '@sendbird/chat/message';
 import { useGroupChannel } from '@sendbird/uikit-chat-hooks';
 import { GroupChannelMessageRenderer, createGroupChannelFragment, useSendbirdChat } from '@sendbird/uikit-react-native';
-import { GroupChannelMessage, Text } from '@sendbird/uikit-react-native-foundation';
+import { GroupChannelMessage, type GroupChannelMessageProps, Text } from '@sendbird/uikit-react-native-foundation';
+import GroupChannelMessageOutgoingStatus from '@sendbird/uikit-react-native/src/components/GroupChannelMessageRenderer/GroupChannelMessageOutgoingStatus';
 
 import { useAppNavigation } from '../../../hooks/useAppNavigation';
 import { Routes } from '../../../libs/navigation';
@@ -11,6 +13,45 @@ import { Routes } from '../../../libs/navigation';
 const GroupChannelFragment = createGroupChannelFragment();
 
 const YOUR_SCHEME = 'scheme://';
+
+const SchemeUserMessage = (props: GroupChannelMessageProps<UserMessage>) => {
+  const { currentUser } = useSendbirdChat();
+  const variant = props.message.sender.userId === currentUser?.userId ? 'outgoing' : 'incoming';
+
+  const onPressScheme = (scheme: string) => {
+    alert('clicked: ' + scheme);
+    // Linking.openURL(scheme);
+  };
+
+  return (
+    <View style={{ paddingHorizontal: 16 }}>
+      <GroupChannelMessage.User
+        {...props}
+        sendingStatus={
+          variant === 'outgoing' && (
+            <GroupChannelMessageOutgoingStatus channel={props.channel} message={props.message} />
+          )
+        }
+        message={props.message}
+        variant={variant}
+        groupedWithPrev={false}
+        groupedWithNext={false}
+        regexTextPatterns={[
+          {
+            regex: new RegExp(`${YOUR_SCHEME}(.+)`, 'g'),
+            replacer(params) {
+              return (
+                <Text {...params.parentProps} onPress={() => onPressScheme(params.match)}>
+                  {params.match}
+                </Text>
+              );
+            },
+          },
+        ]}
+      />
+    </View>
+  );
+};
 
 const GroupChannelScreen = () => {
   const { navigation, params } = useAppNavigation<Routes.GroupChannel>();
@@ -25,29 +66,8 @@ const GroupChannelScreen = () => {
       searchItem={params.searchItem}
       renderMessage={(props) => {
         if (props.message.isUserMessage() && props.message.message.includes(YOUR_SCHEME)) {
-          const variant = props.message.sender.userId === sdk.currentUser?.userId ? 'outgoing' : 'incoming';
           return (
-            <View style={{ paddingHorizontal: 16 }}>
-              <GroupChannelMessage.User
-                {...props}
-                message={props.message}
-                variant={variant}
-                groupedWithPrev={false}
-                groupedWithNext={false}
-                regexTextPatterns={[
-                  {
-                    regex: new RegExp(`${YOUR_SCHEME}(.+)`, 'g'),
-                    replacer(params) {
-                      return (
-                        <Text {...params.parentProps} onPress={() => alert('clicked: ' + params.match)}>
-                          {params.match}
-                        </Text>
-                      );
-                    },
-                  },
-                ]}
-              />
-            </View>
+            <SchemeUserMessage {...props} message={props.message} groupedWithNext={false} groupedWithPrev={false} />
           );
         }
         return <GroupChannelMessageRenderer {...props} />;
