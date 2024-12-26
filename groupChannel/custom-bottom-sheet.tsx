@@ -59,7 +59,8 @@ const GroupChannelScreen = () => {
               ) {
                 if (channel?.myRole === 'operator' || props.message.sender.userId === currentUser?.userId) {
                   const sendableMessage = props.message;
-
+                  // Add the menu items that match your desired conditions to open the bottom sheet.
+                  //  The default bottom sheet items are available in `props.bottomSheetItem`
                   openSheet({
                     ...props.bottomSheetItem,
                     sheetItems: [
